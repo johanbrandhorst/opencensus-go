@@ -24,12 +24,11 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opencensus.io/internal"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Exporter exports stats to Prometheus, users need
@@ -47,6 +46,7 @@ type Options struct {
 	Namespace string
 	Registry  *prometheus.Registry
 	OnError   func(err error)
+	Labels    prometheus.Labels
 }
 
 // NewExporter returns an exporter that exports stats to Prometheus.
@@ -54,7 +54,7 @@ func NewExporter(o Options) (*Exporter, error) {
 	if o.Registry == nil {
 		o.Registry = prometheus.NewRegistry()
 	}
-	collector := newCollector(o, o.Registry)
+	collector := newCollector(o, o.Registry, o.Labels)
 	e := &Exporter{
 		opts:    o,
 		g:       o.Registry,
@@ -80,7 +80,7 @@ func (c *collector) registerViews(views ...*view.View) {
 				viewName(c.opts.Namespace, view),
 				view.Description,
 				tagKeysToLabels(view.TagKeys),
-				nil,
+				c.labels,
 			)
 			c.registeredViewsMu.Lock()
 			c.registeredViews[sig] = desc
@@ -144,6 +144,8 @@ type collector struct {
 
 	// reg helps collector register views dynamically.
 	reg *prometheus.Registry
+	// labels contain the constant labels configured for this exporter.
+	labels prometheus.Labels
 
 	// viewData are accumulated and atomically
 	// appended to on every Export invocation, from
@@ -262,7 +264,7 @@ func tagsToLabels(tags []tag.Tag) []string {
 	return names
 }
 
-func newCollector(opts Options, registrar *prometheus.Registry) *collector {
+func newCollector(opts Options, registrar *prometheus.Registry, labels prometheus.Labels) *collector {
 	return &collector{
 		reg:             registrar,
 		opts:            opts,
